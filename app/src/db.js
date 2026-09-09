@@ -22,9 +22,21 @@ export function createDb(file = ":memory:") {
       user_id   INTEGER NOT NULL REFERENCES users(id),
       title     TEXT NOT NULL,
       body      TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived  INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
     );
   `);
+
+  // Migration, not a rebuild: `CREATE TABLE IF NOT EXISTS` above is a no-op for
+  // a database that already has `notes`, so an existing notes.db would never
+  // get the new column. Adding it in place keeps the rows that are already
+  // there, and existing notes default to "not archived".
+  const columns = db.prepare("PRAGMA table_info(notes)").all();
+  if (!columns.some((c) => c.name === "archived")) {
+    db.exec(
+      "ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))",
+    );
+  }
 
   const seeded = db.prepare("SELECT COUNT(*) AS n FROM users").get().n > 0;
   if (!seeded) {
