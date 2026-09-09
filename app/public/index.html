@@ -24,8 +24,19 @@
       <button type="submit">Додати</button>
     </form>
 
+    <div id="filters" role="group" aria-label="Які нотатки показати">
+      <button type="button" data-archived="0" aria-pressed="true">Активні</button>
+      <button type="button" data-archived="1" aria-pressed="false">Архів</button>
+    </div>
+
     <ul id="notes"></ul>
-    <p id="empty" hidden>Нотаток поки немає.</p>
+    <!--
+      Both messages stay in the accessibility tree with an empty string rather
+      than being toggled with `hidden`: a live region that is removed from the
+      tree and put back does not reliably announce.
+    -->
+    <p id="empty" role="status">Нотаток поки немає.</p>
+    <p id="error" role="alert"></p>
 
     <script type="module" src="./app.js"></script>
   </body>

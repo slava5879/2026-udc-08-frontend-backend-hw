@@ -5,56 +5,135 @@
 const userSelect = document.querySelector("#user");
 const list = document.querySelector("#notes");
 const empty = document.querySelector("#empty");
+const error = document.querySelector("#error");
 const form = document.querySelector("#new-note");
+const filterButtons = [...document.querySelectorAll("#filters button")];
+
+// Which shelf we are looking at. This is only the question the UI asks; what
+// the caller may actually see stays the server's decision.
+let showArchived = false;
 
 function headers() {
   return { "content-type": "application/json", "x-user-id": userSelect.value };
 }
 
+function fail(message) {
+  error.textContent = message;
+}
+
+function noteElement(n) {
+  const li = document.createElement("li");
+  const archived = Boolean(n.archived);
+
+  const grow = document.createElement("div");
+  grow.className = "grow";
+  const title = document.createElement("strong");
+  title.textContent = n.title;
+  if (archived) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "В архіві";
+    title.append(" ", badge);
+  }
+  const body = document.createElement("span");
+  body.textContent = n.body;
+  const when = document.createElement("small");
+  when.textContent = n.created_at;
+  grow.append(title, body, document.createElement("br"), when);
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+
+  // Real buttons with visible text; the aria-label keeps the note's title in
+  // the accessible name so the control still makes sense out of context.
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.textContent = archived ? "Повернути з архіву" : "Архівувати";
+  toggle.setAttribute("aria-label", `${toggle.textContent} нотатку «${n.title}»`);
+  toggle.addEventListener("click", () => setArchived(n.id, !archived));
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.textContent = "Видалити";
+  del.setAttribute("aria-label", `Видалити нотатку «${n.title}»`);
+  del.addEventListener("click", () => remove(n.id));
+
+  actions.append(toggle, del);
+  li.append(grow, actions);
+  return li;
+}
+
 async function load() {
-  const res = await fetch("/api/notes", { headers: headers() });
+  const res = await fetch(`/api/notes?archived=${showArchived ? "1" : "0"}`, {
+    headers: headers(),
+  });
+  if (!res.ok) {
+    list.replaceChildren();
+    empty.textContent = "";
+    return fail("Не вдалося завантажити нотатки.");
+  }
+
   const notes = await res.json();
+  list.replaceChildren(...notes.map(noteElement));
+  empty.textContent = notes.length
+    ? ""
+    : showArchived
+      ? "В архіві порожньо — архівовані нотатки зʼявляться тут."
+      : "Нотаток поки немає.";
+}
 
-  list.replaceChildren(
-    ...notes.map((n) => {
-      const li = document.createElement("li");
+async function setArchived(id, archived) {
+  error.textContent = "";
+  const res = await fetch(`/api/notes/${id}/archive`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ archived }),
+  });
+  if (!res.ok) {
+    return fail(
+      archived
+        ? "Не вдалося архівувати нотатку."
+        : "Не вдалося повернути нотатку з архіву.",
+    );
+  }
+  load();
+}
 
-      const grow = document.createElement("div");
-      grow.className = "grow";
-      const title = document.createElement("strong");
-      title.textContent = n.title;
-      const body = document.createElement("span");
-      body.textContent = n.body;
-      const when = document.createElement("small");
-      when.textContent = n.created_at;
-      grow.append(title, body, document.createElement("br"), when);
+async function remove(id) {
+  error.textContent = "";
+  const res = await fetch(`/api/notes/${id}`, { method: "DELETE", headers: headers() });
+  if (!res.ok) return fail("Не вдалося видалити нотатку.");
+  load();
+}
 
-      const del = document.createElement("button");
-      del.textContent = "Видалити";
-      del.addEventListener("click", async () => {
-        await fetch(`/api/notes/${n.id}`, { method: "DELETE", headers: headers() });
-        load();
-      });
+function setFilter(archived) {
+  showArchived = archived;
+  for (const b of filterButtons) {
+    b.setAttribute("aria-pressed", String(b.dataset.archived === (archived ? "1" : "0")));
+  }
+  error.textContent = "";
+  load();
+}
 
-      li.append(grow, del);
-      return li;
-    }),
-  );
-  empty.hidden = notes.length > 0;
+for (const button of filterButtons) {
+  button.addEventListener("click", () => setFilter(button.dataset.archived === "1"));
 }
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const title = document.querySelector("#title");
   const body = document.querySelector("#body");
-  await fetch("/api/notes", {
+  error.textContent = "";
+  const res = await fetch("/api/notes", {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ title: title.value, body: body.value }),
   });
+  if (!res.ok) return fail("Не вдалося створити нотатку.");
   title.value = "";
   body.value = "";
-  load();
+  // A new note is never archived — show the list it actually landed in.
+  setFilter(false);
 });
 
 userSelect.addEventListener("change", load);
