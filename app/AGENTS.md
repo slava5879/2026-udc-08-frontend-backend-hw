@@ -7,7 +7,7 @@ Guidance for an Agentic IDE working inside `app/`.
 - Node 22+, ESM (`"type": "module"`)
 - Express for the HTTP layer
 - SQLite via `better-sqlite3` (synchronous API — no await on queries)
-- vitest + supertest for tests
+- vitest + supertest for tests; jsdom for the UI tests
 - The UI is plain HTML/CSS/JS served statically. **No build step. No framework.**
 
 ## Commands
@@ -27,7 +27,10 @@ npm run dev     # http://localhost:3080 (writes notes.db)
   `req.userId`; everything under `/api` requires it.
 - `src/server.js` — composition root. Nothing but wiring.
 - `public/` — the UI. `app.js` there talks to the API with `fetch` and sends
-  the same `x-user-id` header, chosen by the dropdown.
+  the same `x-user-id` header, chosen by the dropdown. It exports nothing and
+  wires itself to the document on evaluation, so `test/public-app.test.js` opts
+  into jsdom with a `// @vitest-environment jsdom` docblock, puts the real
+  `index.html` markup in the document, stubs `fetch`, and only then imports it.
 
 ## Conventions
 

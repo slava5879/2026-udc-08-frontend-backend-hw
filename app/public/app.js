@@ -63,46 +63,69 @@ function noteElement(n) {
   return li;
 }
 
-async function load() {
-  const res = await fetch(`/api/notes?archived=${showArchived ? "1" : "0"}`, {
-    headers: headers(),
-  });
-  if (!res.ok) {
-    list.replaceChildren();
-    empty.textContent = "";
-    return fail("Не вдалося завантажити нотатки.");
-  }
+// Switching filter or user starts a new load without cancelling the old one,
+// so two requests can be in flight at once and answer out of order. Every
+// invocation takes the next id; only the newest one may touch the DOM.
+let latestLoad = 0;
 
-  const notes = await res.json();
-  list.replaceChildren(...notes.map(noteElement));
-  empty.textContent = notes.length
-    ? ""
-    : showArchived
-      ? "В архіві порожньо — архівовані нотатки зʼявляться тут."
-      : "Нотаток поки немає.";
+async function load() {
+  const requestId = ++latestLoad;
+  // The shelf this request asked for — `showArchived` may have moved on by the
+  // time the answer arrives.
+  const archived = showArchived;
+  const current = () => requestId === latestLoad;
+
+  try {
+    const res = await fetch(`/api/notes?archived=${archived ? "1" : "0"}`, {
+      headers: headers(),
+    });
+    if (!current()) return;
+    if (!res.ok) {
+      list.replaceChildren();
+      empty.textContent = "";
+      return fail("Не вдалося завантажити нотатки.");
+    }
+
+    const notes = await res.json();
+    if (!current()) return;
+    list.replaceChildren(...notes.map(noteElement));
+    empty.textContent = notes.length
+      ? ""
+      : archived
+        ? "В архіві порожньо — архівовані нотатки зʼявляться тут."
+        : "Нотаток поки немає.";
+  } catch {
+    // The request never produced a response at all (offline, DNS, abort).
+    if (current()) fail("Не вдалося завантажити нотатки.");
+  }
 }
 
 async function setArchived(id, archived) {
   error.textContent = "";
-  const res = await fetch(`/api/notes/${id}/archive`, {
-    method: "PATCH",
-    headers: headers(),
-    body: JSON.stringify({ archived }),
-  });
-  if (!res.ok) {
-    return fail(
-      archived
-        ? "Не вдалося архівувати нотатку."
-        : "Не вдалося повернути нотатку з архіву.",
-    );
+  const message = archived
+    ? "Не вдалося архівувати нотатку."
+    : "Не вдалося повернути нотатку з архіву.";
+  try {
+    const res = await fetch(`/api/notes/${id}/archive`, {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ archived }),
+    });
+    if (!res.ok) return fail(message);
+  } catch {
+    return fail(message);
   }
   load();
 }
 
 async function remove(id) {
   error.textContent = "";
-  const res = await fetch(`/api/notes/${id}`, { method: "DELETE", headers: headers() });
-  if (!res.ok) return fail("Не вдалося видалити нотатку.");
+  try {
+    const res = await fetch(`/api/notes/${id}`, { method: "DELETE", headers: headers() });
+    if (!res.ok) return fail("Не вдалося видалити нотатку.");
+  } catch {
+    return fail("Не вдалося видалити нотатку.");
+  }
   load();
 }
 
@@ -124,12 +147,16 @@ form.addEventListener("submit", async (e) => {
   const title = document.querySelector("#title");
   const body = document.querySelector("#body");
   error.textContent = "";
-  const res = await fetch("/api/notes", {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({ title: title.value, body: body.value }),
-  });
-  if (!res.ok) return fail("Не вдалося створити нотатку.");
+  try {
+    const res = await fetch("/api/notes", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ title: title.value, body: body.value }),
+    });
+    if (!res.ok) return fail("Не вдалося створити нотатку.");
+  } catch {
+    return fail("Не вдалося створити нотатку.");
+  }
   title.value = "";
   body.value = "";
   // A new note is never archived — show the list it actually landed in.
