@@ -55,11 +55,19 @@ export function createApp(db) {
     res.json(rows);
   });
 
-  // Read one note.
+  // Read one of the caller's own notes.
   app.get("/api/notes/:id", (req, res) => {
+    // The owner is part of the SELECT, not a check applied to a row that has
+    // already been read: the question is "may this user see this note", not
+    // "does this note exist". Answering the second one leaked another user's
+    // note in full, body and all, to anyone who guessed an id.
     const note = db
-      .prepare("SELECT id, user_id, title, body, created_at FROM notes WHERE id = ?")
-      .get(Number(req.params.id));
+      .prepare(
+        "SELECT id, title, body, created_at, archived FROM notes WHERE id = ? AND user_id = ?",
+      )
+      .get(Number(req.params.id), req.userId);
+    // Someone else's note is indistinguishable from one that does not exist,
+    // so the 404 itself does not confirm which ids are taken.
     if (!note) return res.status(404).json({ error: "not found" });
     res.json(note);
   });

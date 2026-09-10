@@ -58,6 +58,24 @@ describe("GET /api/notes/:id", () => {
   it("404s for a note that does not exist", async () => {
     await asOlya(request(app).get("/api/notes/999")).expect(404);
   });
+
+  // The suite's other cross-user test is on DELETE, and it was green whether
+  // or not the read path was scoped. This one asks the same question of the
+  // read path, which is where the seeded hole was: reading someone else's
+  // note must be refused, not merely absent from your own list.
+  it("will not read someone else's note", async () => {
+    const res = await asOlya(request(app).get("/api/notes/3"));
+    expect(res.status).toBe(404);
+    // Not a single field of the other user's note may come back.
+    expect(res.body).not.toHaveProperty("title");
+    expect(res.body).not.toHaveProperty("body");
+    expect(JSON.stringify(res.body)).not.toContain("пароль від сейфа");
+  });
+
+  it("does not expose user_id on a note the caller may read", async () => {
+    const res = await asOlya(request(app).get("/api/notes/1")).expect(200);
+    expect(res.body).not.toHaveProperty("user_id");
+  });
 });
 
 describe("PATCH /api/notes/:id/archive", () => {
